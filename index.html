@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>onboarding-todo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 40px auto; padding: 0 16px; color: #191f28; }
+    h1 { font-size: 22px; }
+    form { display: flex; gap: 8px; margin-bottom: 16px; }
+    input[type=text] { flex: 1; padding: 8px 10px; border: 1px solid #d1d6db; border-radius: 8px; }
+    button { padding: 8px 12px; border: 0; border-radius: 8px; background: #1a68dc; color: #fff; cursor: pointer; }
+    button.ghost { background: #f2f4f6; color: #4e5968; }
+    ul { list-style: none; padding: 0; }
+    li { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid #e5e8eb; }
+    li span { flex: 1; }
+    li.done span { text-decoration: line-through; color: #66717e; }
+    #error { color: #f04452; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <h1>TODO</h1>
+
+  <form id="new-form">
+    <input id="new-title" type="text" placeholder="할 일을 입력하세요" autocomplete="off" />
+    <button type="submit">등록</button>
+  </form>
+  <p id="error"></p>
+  <ul id="list"></ul>
+
+  <script>
+    // API 서버(FastAPI)의 주소입니다. 화면과 API는 서로 다른 서버에서 돕니다.
+    // 심화 실습에서 API를 Render에 배포하면 그 주소로 바꿉니다.
+    //   예: const API_BASE = "https://onboarding-todo-xxxx.onrender.com";
+    const API_BASE = "http://localhost:8000";
+
+    // ─────────────────────────────────────────────────────────
+    // API 부르기 — 실습에서 여러분이 채우는 곳
+    //
+    // 서버(main.py)의 함수 하나를 구현할 때마다, 그 API를 부르는 함수를
+    // 여기서 하나씩 채웁니다. listTodos가 예시입니다.
+    // 화면을 그리는 아래쪽 코드는 고치지 않아도 됩니다.
+    // ─────────────────────────────────────────────────────────
+
+    // 응답을 확인하고 결과를 꺼낸다 — 성공이 아니면 오류로 던진다 (이미 완성)
+    async function check(res, label) {
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`${label} → ${res.status} ${text}`);
+      }
+      return res.status === 204 ? null : res.json(); // 204는 본문이 없다
+    }
+
+    // 예시 · 목록 조회 — GET /todos
+    async function listTodos() {
+      const res = await fetch(`${API_BASE}/todos`);
+      return check(res, "GET /todos");
+    }
+
+    // ① 등록 — POST /todos, 본문 {"title": title}
+    //    method · headers(Content-Type) · body(JSON.stringify)를 넣는다
+    async function createTodo(title) {
+      const res = await fetch(`${API_BASE}/todos`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      return check(res, "POST /todos");
+    }
+
+    // ② 제목 수정 — PATCH /todos/{id}, 본문 {"title": title}
+    async function updateTitle(id, title) {
+      const res = await fetch(`${API_BASE}/todos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+
+      return check(res, "PATCH /todos");
+    }
+
+    // ③ 완료 변경 — PATCH /todos/{id}, 본문 {"completed": completed}
+    async function setCompleted(id, completed) {
+      const res = await fetch(`${API_BASE}/todos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed }),
+      });
+      return check(res, "PATCH /todos");
+    }
+
+    // ④ 삭제 — DELETE /todos/{id}, 본문 없음
+    async function deleteTodo(id) {
+      const res = await fetch(`${API_BASE}/todos/${id}`, {
+        method: "DELETE",
+      });
+      
+      return check(res, "DELETE /todos");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 화면 그리기 — 이미 완성되어 있습니다
+    // ─────────────────────────────────────────────────────────
+
+    const list = document.getElementById("list");
+    const errorBox = document.getElementById("error");
+
+    function render(todos) {
+      list.innerHTML = "";
+      for (const todo of todos) {
+        const li = document.createElement("li");
+        if (todo.completed) li.classList.add("done");
+
+        const box = document.createElement("input");
+        box.type = "checkbox";
+        box.checked = todo.completed;
+        box.onchange = () => run(() => setCompleted(todo.id, box.checked));
+
+        const title = document.createElement("span");
+        title.textContent = todo.title;
+
+        const edit = document.createElement("button");
+        edit.className = "ghost";
+        edit.textContent = "수정";
+        edit.onclick = () => {
+          const next = prompt("새 제목", todo.title);
+          if (next !== null) run(() => updateTitle(todo.id, next));
+        };
+
+        const del = document.createElement("button");
+        del.className = "ghost";
+        del.textContent = "삭제";
+        del.onclick = () => run(() => deleteTodo(todo.id));
+
+        li.append(box, title, edit, del);
+        list.append(li);
+      }
+    }
+
+    async function load() {
+      render(await listTodos());
+    }
+
+    // 요청을 보내고, 성공하면 목록을 다시 불러오고, 실패하면 오류를 보여 준다
+    async function run(action) {
+      errorBox.textContent = "";
+      try {
+        await action();
+        await load();
+      } catch (e) {
+        errorBox.textContent = e.message;
+      }
+    }
+
+    document.getElementById("new-form").onsubmit = (e) => {
+      e.preventDefault();
+      const input = document.getElementById("new-title");
+      run(async () => {
+        await createTodo(input.value);
+        input.value = "";
+      });
+    };
+
+    run(() => Promise.resolve());
+  </script>
+</body>
+</html>
