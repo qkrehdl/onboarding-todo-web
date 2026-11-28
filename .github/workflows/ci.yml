@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 문법 검사
+        run: |
+          node --check js/config.js
+          node --check js/api.js
+          node --check js/app.js
+      - name: API 호출 테스트
+        run: node --test
